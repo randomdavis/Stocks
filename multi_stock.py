@@ -128,6 +128,8 @@ def custom_eaSimple(population, toolbox, cxpb, mutpb, ngen, stats=None,
         # Replace the current population by the offspring
         population[:] = offspring
 
+        population = reset_offspring_portfolio(population)
+
         # Append the current generation statistics to the logbook
         record = stats.compile(population) if stats else {}
         logbook.record(gen=gen, nevals=len(invalid_ind), **record)
@@ -199,7 +201,7 @@ def main():
     stats.register("min", np.min)
     stats.register("max", np.max)
 
-    pop, log = custom_eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.2, ngen=50, stats=stats, halloffame=hof, verbose=True)
+    pop, log = custom_eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.2, ngen=20, stats=stats, halloffame=hof, verbose=True)
 
     print(f"Best individual is: sell_threshold={hof[0].sell_threshold:.3f}, "
           f"buy_threshold={hof[0].buy_threshold:.3f}, "
