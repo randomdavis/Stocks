@@ -8,7 +8,12 @@ from typing import List, Tuple
 class Stock:
     def __init__(self, name: str, S0: float, mu: float, sigma: float, T: float, dt: float):
         self.name = name
-        self.prices = self.geometric_brownian_motion(S0, mu, sigma, T, dt)
+        self.prices = None
+        self.parameters = (S0, mu, sigma, T, dt)
+        self.reset_prices()
+
+    def reset_prices(self):
+        self.prices = self.geometric_brownian_motion(*self.parameters)
 
     @staticmethod
     def geometric_brownian_motion(S0: float, mu: float, sigma: float, T: float, dt: float) -> np.ndarray:
@@ -26,6 +31,13 @@ class Portfolio:
         self.cash = self.initial_cash
         self.owned_stocks = {stock.name: 0 for stock in stocks}
 
+    def reset(self):
+        self.cash = self.initial_cash
+        for stock_name in self.owned_stocks:
+            self.owned_stocks[stock_name] = 0
+        for stock in self.stocks:
+            self.stocks[stock].reset_prices()
+
     def total_value(self):
         stocks_value = sum(
             self.stocks[stock_name].prices[-1] * n_stocks for stock_name, n_stocks in self.owned_stocks.items())
@@ -40,12 +52,8 @@ class Investor:
         self.stop_loss_ratio = stop_loss_ratio
         self.target_cash = portfolio.initial_cash
 
-    def reset_portfolio(self):
-        self.portfolio.cash = self.portfolio.initial_cash
-        for stock_name in self.portfolio.owned_stocks:
-            self.portfolio.owned_stocks[stock_name] = 0
-
     def backtest_strategy(self):
+        self.portfolio.reset()
         stock_prices = {stock_name: stock.prices for stock_name, stock in self.portfolio.stocks.items()}
         previous_buy_or_sell_prices = {stock_name: stock_price[0] for stock_name, stock_price in stock_prices.items()}
         for day in range(1, len(self.portfolio.stocks[next(iter(self.portfolio.stocks))].prices)):
@@ -68,7 +76,8 @@ class Investor:
                     if self.portfolio.cash > self.target_cash:
                         self.target_cash = self.portfolio.cash
                     self.portfolio.owned_stocks[stock_name] = 0
-                    previous_buy_or_sell_prices[stock_name] = current_price
+                    previous_price = current_price
+                    previous_buy_or_sell_prices[stock_name] = previous_price
 
             else:
                 change_from_previous_point = (current_price - previous_price) / previous_price
@@ -76,70 +85,8 @@ class Investor:
                     n_stocks = floor(self.portfolio.cash / current_price)
                     self.portfolio.cash -= n_stocks * current_price
                     self.portfolio.owned_stocks[stock_name] = n_stocks
-                    previous_buy_or_sell_prices[stock_name] = current_price
-
-
-def reset_offspring_portfolio(offspring: List[Investor]):
-    for ind in offspring:
-        ind.reset_portfolio()
-    return offspring
-
-
-def custom_eaSimple(population, toolbox, cxpb, mutpb, ngen, stats=None,
-             halloffame=None, verbose=__debug__):
-    logbook = tools.Logbook()
-    logbook.header = ['gen', 'nevals'] + (stats.fields if stats else [])
-
-    # Evaluate the individuals with an invalid fitness
-    invalid_ind = [ind for ind in population if not ind.fitness.valid]
-    fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
-    for ind, fit in zip(invalid_ind, fitnesses):
-        ind.fitness.values = fit
-
-    if halloffame is not None:
-        halloffame.update(population)
-
-    record = stats.compile(population) if stats else {}
-    logbook.record(gen=0, nevals=len(invalid_ind), **record)
-    if verbose:
-        print(logbook.stream)
-
-    try:
-        # Begin the generational process
-        for gen in range(1, ngen + 1):
-            # Select the next generation individuals
-            offspring = toolbox.select(population, len(population))
-
-            # Vary the pool of individuals
-            offspring = algorithms.varAnd(offspring, toolbox, cxpb, mutpb)
-
-            # Reset offspring's portfolios and cash
-            offspring = reset_offspring_portfolio(offspring)
-
-            # Evaluate the individuals with an invalid fitness
-            invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-            fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
-            for ind, fit in zip(invalid_ind, fitnesses):
-                ind.fitness.values = fit
-
-            # Update the hall of fame with the generated individuals
-            if halloffame is not None:
-                halloffame.update(offspring)
-
-            # Replace the current population by the offspring
-            population[:] = offspring
-
-            population = reset_offspring_portfolio(population)
-
-            # Append the current generation statistics to the logbook
-            record = stats.compile(population) if stats else {}
-            logbook.record(gen=gen, nevals=len(invalid_ind), **record)
-            if verbose:
-                print(logbook.stream)
-    except KeyboardInterrupt:
-        print("\nExecution stopped by user. Displaying best individuals so far.")
-
-    return population, logbook
+                    previous_price = current_price
+                    previous_buy_or_sell_prices[stock_name] = previous_price
 
 
 def evaluate(investor: Investor) -> Tuple[float]:
@@ -162,9 +109,6 @@ def mate_investors(ind1: Investor, ind2: Investor):
     ind1.sell_threshold, ind2.sell_threshold = ind2.sell_threshold, ind1.sell_threshold
     ind1.buy_threshold, ind2.buy_threshold = ind2.buy_threshold, ind1.buy_threshold
     ind1.stop_loss_ratio, ind2.stop_loss_ratio = ind2.stop_loss_ratio, ind1.stop_loss_ratio
-
-    ind1.reset_portfolio()
-    ind2.reset_portfolio()
 
     return ind1, ind2
 
@@ -216,7 +160,7 @@ def main():
     stats.register("min", np.min)
     stats.register("max", np.max)
 
-    pop, log = custom_eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.2, ngen=generations, stats=stats, halloffame=hof, verbose=True)
+    pop, log = algorithms.eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.2, ngen=generations, stats=stats, halloffame=hof, verbose=True)
 
     print(f"Best individual is: sell_threshold={hof[0].sell_threshold:.3f}, "
           f"buy_threshold={hof[0].buy_threshold:.3f}, "
