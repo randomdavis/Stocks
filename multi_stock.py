@@ -104,37 +104,40 @@ def custom_eaSimple(population, toolbox, cxpb, mutpb, ngen, stats=None,
     if verbose:
         print(logbook.stream)
 
-    # Begin the generational process
-    for gen in range(1, ngen + 1):
-        # Select the next generation individuals
-        offspring = toolbox.select(population, len(population))
+    try:
+        # Begin the generational process
+        for gen in range(1, ngen + 1):
+            # Select the next generation individuals
+            offspring = toolbox.select(population, len(population))
 
-        # Vary the pool of individuals
-        offspring = algorithms.varAnd(offspring, toolbox, cxpb, mutpb)
+            # Vary the pool of individuals
+            offspring = algorithms.varAnd(offspring, toolbox, cxpb, mutpb)
 
-        # Reset offspring's portfolios and cash
-        offspring = reset_offspring_portfolio(offspring)
+            # Reset offspring's portfolios and cash
+            offspring = reset_offspring_portfolio(offspring)
 
-        # Evaluate the individuals with an invalid fitness
-        invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-        fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
-        for ind, fit in zip(invalid_ind, fitnesses):
-            ind.fitness.values = fit
+            # Evaluate the individuals with an invalid fitness
+            invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+            fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
+            for ind, fit in zip(invalid_ind, fitnesses):
+                ind.fitness.values = fit
 
-        # Update the hall of fame with the generated individuals
-        if halloffame is not None:
-            halloffame.update(offspring)
+            # Update the hall of fame with the generated individuals
+            if halloffame is not None:
+                halloffame.update(offspring)
 
-        # Replace the current population by the offspring
-        population[:] = offspring
+            # Replace the current population by the offspring
+            population[:] = offspring
 
-        population = reset_offspring_portfolio(population)
+            population = reset_offspring_portfolio(population)
 
-        # Append the current generation statistics to the logbook
-        record = stats.compile(population) if stats else {}
-        logbook.record(gen=gen, nevals=len(invalid_ind), **record)
-        if verbose:
-            print(logbook.stream)
+            # Append the current generation statistics to the logbook
+            record = stats.compile(population) if stats else {}
+            logbook.record(gen=gen, nevals=len(invalid_ind), **record)
+            if verbose:
+                print(logbook.stream)
+    except KeyboardInterrupt:
+        print("\nExecution stopped by user. Displaying best individuals so far.")
 
     return population, logbook
 
@@ -167,9 +170,21 @@ def mate_investors(ind1: Investor, ind2: Investor):
 
 
 def main():
+    population = 100
+    generations = 50
+
     initial_cash = 10000
     num_stocks = 5  # Number of stocks in the portfolio
-    stocks = [Stock(f'Stock{i}', 100, 0, 0.2, 1, 1 / 252 / 390) for i in range(num_stocks)]
+
+    S0: float = 100
+    mu: float = 0
+    sigma: float = 0.2
+    T: float = 1
+    dt: float = 1 / 252 / 390
+
+    print(f'S0 {S0}, mu {mu}, sigma {sigma}, T {T}, dt {dt}, initial cash {initial_cash}, num stocks {num_stocks}')
+
+    stocks = [Stock(f'Stock{i}', S0, mu, sigma, T, dt) for i in range(num_stocks)]
 
     creator.create("FitnessMax", base.Fitness, weights=(1.0,))
     creator.create("Investor", Investor, fitness=creator.FitnessMax)
@@ -194,14 +209,14 @@ def main():
     toolbox.register("mutate", mutate_investor, mu=0, sigma=0.1, indpb=0.1)
     toolbox.register("select", tools.selTournament, tournsize=3)
 
-    pop = toolbox.population(n=50)
+    pop = toolbox.population(n=population)
     hof = tools.HallOfFame(5)
     stats = tools.Statistics(lambda ind: ind.fitness.values)
     stats.register("avg", np.mean)
     stats.register("min", np.min)
     stats.register("max", np.max)
 
-    pop, log = custom_eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.2, ngen=20, stats=stats, halloffame=hof, verbose=True)
+    pop, log = custom_eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.2, ngen=generations, stats=stats, halloffame=hof, verbose=True)
 
     print(f"Best individual is: sell_threshold={hof[0].sell_threshold:.3f}, "
           f"buy_threshold={hof[0].buy_threshold:.3f}, "
