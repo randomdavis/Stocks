@@ -183,16 +183,21 @@ def main():
                   f"cash_ratio={hof[i].cash_ratio:.3f}\n"
                   f"with fitness: {individual.fitness}")
 
-import cProfile
-import pstats
-from io import StringIO
+
 if __name__ == '__main__':
-    pr = cProfile.Profile()
-    pr.enable()
-    main()
-    pr.disable()
-    # Print the profiling results.
-    s = StringIO()
-    ps = pstats.Stats(pr, stream=s).sort_stats('cumulative')
-    ps.print_stats()
-    print(s.getvalue())
+    profile = False
+    if profile:
+        import cProfile
+        import pstats
+        from io import StringIO
+        pr = cProfile.Profile()
+        pr.enable()
+        main()
+        pr.disable()
+        # Print the profiling results.
+        s = StringIO()
+        ps = pstats.Stats(pr, stream=s).sort_stats('cumulative')
+        ps.print_stats()
+        print(s.getvalue())
+    else:
+        main()
