@@ -15,7 +15,8 @@ class Stock:
         self.prices = self.geometric_brownian_motion(*self.parameters)
 
     @staticmethod
-    def geometric_brownian_motion(S0: float, mu: float, sigma: float, T: float, dt: float) -> np.ndarray:
+    def geometric_brownian_motion(S0: float, mu: float, sigma: float, T: float, dt: float, seed: int = 42) -> np.ndarray:
+        np.random.seed(seed)
         t = np.linspace(0, T, int(T / dt))
         n = len(t)
         W = np.random.standard_normal(size=n)
@@ -56,38 +57,37 @@ class Investor:
         self.portfolio.reset()
         stock_prices = {stock_name: stock.prices for stock_name, stock in self.portfolio.stocks.items()}
         previous_buy_or_sell_prices = {stock_name: stock_price[0] for stock_name, stock_price in stock_prices.items()}
-        days = range(1, len(self.portfolio.stocks[next(iter(self.portfolio.stocks))].prices))
-        for day in days:
-            self._buy_or_sell_stocks(day, stock_prices, previous_buy_or_sell_prices)
+        self._buy_or_sell_stocks(stock_prices, previous_buy_or_sell_prices)
 
-    def _buy_or_sell_stocks(self, day, stock_prices, previous_buy_or_sell_prices):
-        for stock_name in stock_prices:
-            current_price = stock_prices[stock_name][day]
-            own_stock = self.portfolio.owned_stocks[stock_name] > 0
-            previous_price = previous_buy_or_sell_prices[stock_name]
+    def _buy_or_sell_stocks(self, stock_prices, previous_buy_or_sell_prices):
+        for i in range(len(self.portfolio.stocks[next(iter(self.portfolio.stocks))].prices)):
+            for stock_name in stock_prices:
+                current_price = stock_prices[stock_name][i]
+                own_stock = self.portfolio.owned_stocks[stock_name] > 0
+                previous_price = previous_buy_or_sell_prices[stock_name]
 
-            if own_stock:
-                change_from_previous_point = (current_price - previous_price) / previous_price
-                portfolio_value = self.portfolio.total_value()
-                change_from_portfolio_value = (portfolio_value - self.target_cash) / self.target_cash
-                is_stoploss = change_from_portfolio_value <= -self.stop_loss_ratio
+                if own_stock:
+                    change_from_previous_point = (current_price - previous_price) / previous_price
+                    portfolio_value = self.portfolio.total_value()
+                    change_from_portfolio_value = (portfolio_value - self.target_cash) / self.target_cash
+                    is_stoploss = change_from_portfolio_value <= -self.stop_loss_ratio
 
-                if change_from_previous_point >= self.sell_threshold or is_stoploss:
-                    self.portfolio.cash += current_price * self.portfolio.owned_stocks[stock_name]
-                    if self.portfolio.cash > self.target_cash:
-                        self.target_cash = self.portfolio.cash
-                    self.portfolio.owned_stocks[stock_name] = 0
-                    previous_price = current_price
-                    previous_buy_or_sell_prices[stock_name] = previous_price
+                    if change_from_previous_point >= self.sell_threshold or is_stoploss:
+                        self.portfolio.cash += current_price * self.portfolio.owned_stocks[stock_name]
+                        if self.portfolio.cash > self.target_cash:
+                            self.target_cash = self.portfolio.cash
+                        self.portfolio.owned_stocks[stock_name] = 0
+                        previous_price = current_price
+                        previous_buy_or_sell_prices[stock_name] = previous_price
 
-            else:
-                change_from_previous_point = (current_price - previous_price) / previous_price
-                if change_from_previous_point <= -self.buy_threshold:
-                    n_stocks = floor(self.portfolio.cash * self.cash_ratio / current_price)  # Considering cash_ratio
-                    self.portfolio.cash -= n_stocks * current_price
-                    self.portfolio.owned_stocks[stock_name] = n_stocks
-                    previous_price = current_price
-                    previous_buy_or_sell_prices[stock_name] = previous_price
+                else:
+                    change_from_previous_point = (current_price - previous_price) / previous_price
+                    if change_from_previous_point <= -self.buy_threshold:
+                        n_stocks = floor(self.portfolio.cash * self.cash_ratio / current_price)  # Considering cash_ratio
+                        self.portfolio.cash -= n_stocks * current_price
+                        self.portfolio.owned_stocks[stock_name] = n_stocks
+                        previous_price = current_price
+                        previous_buy_or_sell_prices[stock_name] = previous_price
 
 
 def eaSimpleWithElitism(population, toolbox, cxpb, mutpb, ngen, stats=None,
