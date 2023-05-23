@@ -7,16 +7,18 @@ from typing import List, Tuple
 
 class Stock:
     def __init__(self, name: str, S0: float, mu: float, sigma: float, T: float, dt: float):
+        np.random.seed(42)
         self.name = name
         self.prices = None
         self.parameters = (S0, mu, sigma, T, dt)
+        self.reset_prices()
 
     def reset_prices(self):
         self.prices = self.geometric_brownian_motion(*self.parameters)
 
     @staticmethod
-    def geometric_brownian_motion(S0: float, mu: float, sigma: float, T: float, dt: float, seed: int = 42) -> np.ndarray:
-        np.random.seed(seed)
+    def geometric_brownian_motion(S0: float, mu: float, sigma: float, T: float, dt: float) -> np.ndarray:
+        np.random.seed(42)
         t = np.linspace(0, T, int(T / dt))
         n = len(t)
         W = np.random.standard_normal(size=n)
@@ -39,9 +41,9 @@ class Portfolio:
             self.stocks[stock].reset_prices()
 
     def total_value(self):
-        stocks_value = sum(
-            self.stocks[stock_name].prices[-1] * n_stocks for stock_name, n_stocks in self.owned_stocks.items())
-        return self.cash + stocks_value
+        stock_values = [stock.prices[-1] * self.owned_stocks[stock.name] for stock in self.stocks.values()]
+        total_portfolio_value = self.cash + sum(stock_values)
+        return total_portfolio_value
 
 
 class Investor:
@@ -57,18 +59,19 @@ class Investor:
         self.portfolio.reset()
         stock_prices = {stock_name: stock.prices for stock_name, stock in self.portfolio.stocks.items()}
         previous_buy_or_sell_prices = {stock_name: stock_price[0] for stock_name, stock_price in stock_prices.items()}
-        self._buy_or_sell_stocks(stock_prices, previous_buy_or_sell_prices)
+        num_price_points = range(1, len(self.portfolio.stocks[next(iter(self.portfolio.stocks))].prices))
+        self._buy_or_sell_stocks(num_price_points, stock_prices, previous_buy_or_sell_prices)
 
-    def _buy_or_sell_stocks(self, stock_prices, previous_buy_or_sell_prices):
-        for i in range(len(self.portfolio.stocks[next(iter(self.portfolio.stocks))].prices)):
-            for stock_name in stock_prices:
-                current_price = stock_prices[stock_name][i]
-                own_stock = self.portfolio.owned_stocks[stock_name] > 0
+    def _buy_or_sell_stocks(self, num_price_points, stock_prices, previous_buy_or_sell_prices):
+        for price_point_num in num_price_points:
+            owned_stocks = {k: v for k, v in self.portfolio.owned_stocks.items() if v > 0}
+            for stock_name, prices in stock_prices.items():
+                current_price = prices[price_point_num]
                 previous_price = previous_buy_or_sell_prices[stock_name]
 
-                if own_stock:
+                if stock_name in owned_stocks:
                     change_from_previous_point = (current_price - previous_price) / previous_price
-                    portfolio_value = self.portfolio.total_value()
+                    portfolio_value = self.portfolio.cash + sum([stock.prices[price_point_num] * self.portfolio.owned_stocks[stock.name] for stock in self.portfolio.stocks.values()])
                     change_from_portfolio_value = (portfolio_value - self.target_cash) / self.target_cash
                     is_stoploss = change_from_portfolio_value <= -self.stop_loss_ratio
 
@@ -88,59 +91,6 @@ class Investor:
                         self.portfolio.owned_stocks[stock_name] = n_stocks
                         previous_price = current_price
                         previous_buy_or_sell_prices[stock_name] = previous_price
-
-
-def eaSimpleWithElitism(population, toolbox, cxpb, mutpb, ngen, stats=None,
-             halloffame=None, verbose=__debug__):
-    logbook = tools.Logbook()
-    logbook.header = ['gen', 'nevals'] + (stats.fields if stats else [])
-
-    # Evaluate the individuals with an invalid fitness
-    invalid_ind = [ind for ind in population if not ind.fitness.valid]
-    fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
-    for ind, fit in zip(invalid_ind, fitnesses):
-        ind.fitness.values = fit
-
-    if halloffame is not None:
-        halloffame.update(population)
-
-    record = stats.compile(population) if stats else {}
-    logbook.record(gen=0, nevals=len(invalid_ind), **record)
-    if verbose:
-        print(logbook.stream)
-
-    # Begin the generational process
-    for gen in range(1, ngen + 1):
-        # Select the next generation individuals
-        offspring = toolbox.select(population, len(population))
-
-        # Vary the pool of individuals
-        offspring = algorithms.varAnd(offspring, toolbox, cxpb, mutpb)
-
-        # Invalidate fitness of offspring
-        for ind in offspring:
-            del ind.fitness.values
-
-        # Evaluate the individuals with an invalid fitness
-        invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-        fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
-        for ind, fit in zip(invalid_ind, fitnesses):
-            ind.fitness.values = fit
-
-        # Update the hall of fame with the generated individuals
-        if halloffame is not None:
-            halloffame.update(offspring)
-
-        # Replace the current population by the offspring
-        population[:] = offspring
-
-        # Append the current generation statistics to the logbook
-        record = stats.compile(population) if stats else {}
-        logbook.record(gen=gen, nevals=len(invalid_ind), **record)
-        if verbose:
-            print(logbook.stream)
-
-    return population, logbook
 
 
 def evaluate(investor: Investor) -> Tuple[float]:
@@ -172,7 +122,7 @@ def mate_investors(ind1: Investor, ind2: Investor):
 
 def main():
     population = 100
-    generations = 50
+    generations = 15
 
     initial_cash = 10000
     num_stocks = 5  # Number of stocks in the portfolio
@@ -194,7 +144,7 @@ def main():
     toolbox.register("attr_sell", random.uniform, 0, 0.5)
     toolbox.register("attr_buy", random.uniform, 0, 0.5)
     toolbox.register("attr_stoploss", random.uniform, 0, 0.5)
-    toolbox.register("attr_cash_ratio", random.uniform, 0, 1)
+    toolbox.register("attr_cash_ratio", random.uniform, 0, 1.0)
 
     def generate_new_investor():
         return creator.Investor(Portfolio(stocks, initial_cash),
@@ -220,7 +170,7 @@ def main():
     stats.register("max", np.max)
 
     try:
-        pop, log = eaSimpleWithElitism(pop, toolbox, cxpb=0.5, mutpb=0.2, ngen=generations, stats=stats, halloffame=hof, verbose=True)
+        pop, log = algorithms.eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.2, ngen=generations, stats=stats, halloffame=hof, verbose=True)
     except KeyboardInterrupt:
         pass
 
@@ -233,6 +183,16 @@ def main():
                   f"cash_ratio={hof[i].cash_ratio:.3f}\n"
                   f"with fitness: {individual.fitness}")
 
-
+import cProfile
+import pstats
+from io import StringIO
 if __name__ == '__main__':
+    pr = cProfile.Profile()
+    pr.enable()
     main()
+    pr.disable()
+    # Print the profiling results.
+    s = StringIO()
+    ps = pstats.Stats(pr, stream=s).sort_stats('cumulative')
+    ps.print_stats()
+    print(s.getvalue())
