@@ -1,3 +1,5 @@
+import asyncio
+
 import numpy as np
 from math import floor
 from deap import base, creator, tools, algorithms
@@ -6,15 +8,14 @@ from typing import List, Tuple
 
 
 class Stock:
-    def __init__(self, name: str, S0: float, mu: float, sigma: float, T: float, dt: float):
-        np.random.seed(42)
+    def __init__(self, name: str, S0: float, mu: float, sigma: float, T: float, dt: float, seed: int = 42):
+        self.seed = seed
+        np.random.seed(self.seed)
         self.name = name
         self.prices = None
         self.parameters = (S0, mu, sigma, T, dt)
-        self.reset_prices()
-
-    def reset_prices(self):
         self.prices = self.geometric_brownian_motion(*self.parameters)
+
 
     @staticmethod
     def geometric_brownian_motion(S0: float, mu: float, sigma: float, T: float, dt: float) -> np.ndarray:
@@ -37,8 +38,6 @@ class Portfolio:
         self.cash = self.initial_cash
         for stock_name in self.owned_stocks:
             self.owned_stocks[stock_name] = 0
-        for stock in self.stocks:
-            self.stocks[stock].reset_prices()
 
     def total_value(self):
         stock_values = [stock.prices[-1] * self.owned_stocks[stock.name] for stock in self.stocks.values()]
@@ -93,7 +92,7 @@ class Investor:
                         previous_buy_or_sell_prices[stock_name] = previous_price
 
 
-def evaluate(investor: Investor) -> Tuple[float]:
+async def evaluate(investor: Investor) -> Tuple[float]:
     investor.backtest_strategy()
     return investor.portfolio.total_value(),
 
@@ -120,6 +119,61 @@ def mate_investors(ind1: Investor, ind2: Investor):
     return ind1, ind2
 
 
+async def evaluate_population_async(population):
+    coroutines = [evaluate(individual) for individual in population]
+    results = await asyncio.gather(*coroutines)
+    return results
+
+
+def evaluate_population(population):
+    results = asyncio.run(evaluate_population_async(population))
+    for ind, fit in zip(population, results):
+        ind.fitness.values = fit
+
+
+def custom_eaSimple(population, toolbox, cxpb, mutpb, ngen, stats=None,
+             halloffame=None, verbose=__debug__):
+    logbook = tools.Logbook()
+    logbook.header = ['gen', 'nevals'] + (stats.fields if stats else [])
+
+    # Evaluate the entire population in parallel
+    toolbox.evaluate(population)
+
+    if halloffame is not None:
+        halloffame.update(population)
+
+    record = stats.compile(population) if stats else {}
+    logbook.record(gen=0, nevals=sum(1 for ind in population if not ind.fitness.valid), **record)
+    if verbose:
+        print(logbook.stream)
+
+    # Begin the generational process
+    for gen in range(1, ngen + 1):
+        # Select the next generation individuals
+        offspring = toolbox.select(population, len(population))
+
+        # Vary the pool of individuals
+        offspring = algorithms.varAnd(offspring, toolbox, cxpb, mutpb)
+
+        # Evaluate the entire offspring population in parallel
+        toolbox.evaluate(offspring)
+
+        # Update the hall of fame with the generated individuals
+        if halloffame is not None:
+            halloffame.update(offspring)
+
+        # Replace the current population by the offspring
+        population[:] = offspring
+
+        # Append the current generation statistics to the logbook
+        record = stats.compile(population) if stats else {}
+        logbook.record(gen=gen, nevals=sum(1 for ind in offspring if not ind.fitness.valid), **record)
+        if verbose:
+            print(logbook.stream)
+
+    return population, logbook
+
+
 def main():
     population = 100
     generations = 15
@@ -135,7 +189,7 @@ def main():
 
     print(f'S0 {S0}, mu {mu}, sigma {sigma}, T {T}, dt {dt}, initial cash {initial_cash}, num stocks {num_stocks}')
 
-    stocks = [Stock(f'Stock{i}', S0, mu, sigma, T, dt) for i in range(num_stocks)]
+    stocks = [Stock(f'Stock{i}', S0, mu, sigma, T, dt, seed=42 + i) for i in range(num_stocks)]
 
     creator.create("FitnessMax", base.Fitness, weights=(1.0,))
     creator.create("Investor", Investor, fitness=creator.FitnessMax)
@@ -157,7 +211,7 @@ def main():
 
     toolbox.register("population", tools.initRepeat, list, toolbox.investor)
 
-    toolbox.register("evaluate", evaluate)
+    toolbox.register("evaluate", evaluate_population)
     toolbox.register("mate", mate_investors)
     toolbox.register("mutate", mutate_investor, mu=0, sigma=0.1, indpb=0.1)
     toolbox.register("select", tools.selTournament, tournsize=3)
@@ -170,7 +224,7 @@ def main():
     stats.register("max", np.max)
 
     try:
-        pop, log = algorithms.eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.2, ngen=generations, stats=stats, halloffame=hof, verbose=True)
+        pop, log = custom_eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.2, ngen=generations, stats=stats, halloffame=hof, verbose=True)
     except KeyboardInterrupt:
         pass
 
