@@ -136,14 +136,17 @@ def custom_eaSimple(population, toolbox, cxpb, mutpb, ngen, stats=None,
     logbook = tools.Logbook()
     logbook.header = ['gen', 'nevals'] + (stats.fields if stats else [])
 
+    # Evaluate the individuals with an invalid fitness
+    invalid_ind = [ind for ind in population if not ind.fitness.valid]
+
     # Evaluate the entire population in parallel
-    toolbox.evaluate(population)
+    toolbox.evaluate(invalid_ind)
 
     if halloffame is not None:
         halloffame.update(population)
 
     record = stats.compile(population) if stats else {}
-    logbook.record(gen=0, nevals=sum(1 for ind in population if not ind.fitness.valid), **record)
+    logbook.record(gen=0, nevals=len(invalid_ind), **record)
     if verbose:
         print(logbook.stream)
 
@@ -155,8 +158,11 @@ def custom_eaSimple(population, toolbox, cxpb, mutpb, ngen, stats=None,
         # Vary the pool of individuals
         offspring = algorithms.varAnd(offspring, toolbox, cxpb, mutpb)
 
+        # Evaluate the individuals with an invalid fitness
+        invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+
         # Evaluate the entire offspring population in parallel
-        toolbox.evaluate(offspring)
+        toolbox.evaluate(invalid_ind)
 
         # Update the hall of fame with the generated individuals
         if halloffame is not None:
@@ -167,7 +173,7 @@ def custom_eaSimple(population, toolbox, cxpb, mutpb, ngen, stats=None,
 
         # Append the current generation statistics to the logbook
         record = stats.compile(population) if stats else {}
-        logbook.record(gen=gen, nevals=sum(1 for ind in offspring if not ind.fitness.valid), **record)
+        logbook.record(gen=gen, nevals=len(invalid_ind), **record)
         if verbose:
             print(logbook.stream)
 
@@ -175,7 +181,7 @@ def custom_eaSimple(population, toolbox, cxpb, mutpb, ngen, stats=None,
 
 
 def main():
-    population = 100
+    population = 20
     generations = 15
 
     initial_cash = 10000
