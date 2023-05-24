@@ -8,31 +8,44 @@ from typing import List, Tuple
 
 
 class Stock:
-    def __init__(self, name: str, S0: float, mu: float, sigma: float, T: float, dt: float, seed: int = 42):
-        self.seed = seed
-        np.random.seed(self.seed)
+    def __init__(self, name: str, initial_stock_price: float, expected_return: float, volatility: float,
+                 time_period: float, time_step: float, random_seed: int = 42):
         self.name = name
         self.prices = None
-        self.parameters = (S0, mu, sigma, T, dt)
-        self.prices = self.geometric_brownian_motion(*self.parameters)
-
+        self.parameters = (initial_stock_price, expected_return, volatility, time_period, time_step, random_seed)
+        self.prices = self.calculate_geometric_brownian_motion(*self.parameters)
 
     @staticmethod
-    def geometric_brownian_motion(S0: float, mu: float, sigma: float, T: float, dt: float) -> np.ndarray:
-        np.random.seed(42)
-        t = np.linspace(0, T, int(T / dt))
-        n = len(t)
-        W = np.random.standard_normal(size=n)
-        W = np.cumsum(W) * np.sqrt(dt)
-        return S0 * np.exp((mu - 0.5 * sigma ** 2) * t + sigma * W)
+    def calculate_geometric_brownian_motion(initial_stock_price: float, expected_return: float, volatility: float,
+                                            time_period: float, time_step: float, random_seed: int) -> np.ndarray:
+        np.random.seed(random_seed)
+        time_array = np.linspace(0, time_period, int(time_period / time_step))
+        num_steps = len(time_array)
+        random_walk = np.random.standard_normal(size=num_steps)
+        random_walk = np.cumsum(random_walk) * np.sqrt(time_step)
+        return initial_stock_price * np.exp(
+            (expected_return - 0.5 * volatility ** 2) * time_array + volatility * random_walk)
 
 
-class Portfolio:
-    def __init__(self, stocks: List[Stock], initial_cash: float):
-        self.stocks = {stock.name: stock for stock in stocks}
+class InvestorPortfolio:
+    stocks = []
+
+    @classmethod
+    def set_stocks(cls, stocks: List[Stock]):
+        cls.stocks = stocks
+
+    def __init__(self, initial_cash: float, sell_threshold: float, buy_threshold: float, stop_loss_ratio: float,
+                 cash_ratio: float):
         self.initial_cash = initial_cash
         self.cash = self.initial_cash
-        self.owned_stocks = {stock.name: 0 for stock in stocks}
+        self.owned_stocks = {stock.name: 0 for stock in self.stocks}
+        self.sell_threshold = sell_threshold
+        self.buy_threshold = buy_threshold
+        self.stop_loss_ratio = stop_loss_ratio
+        self.cash_ratio = cash_ratio
+        self.target_cash = initial_cash
+        self.num_buys = 0
+        self.num_sells = 0
 
     def reset(self):
         self.cash = self.initial_cash
@@ -40,64 +53,52 @@ class Portfolio:
             self.owned_stocks[stock_name] = 0
 
     def total_value(self):
-        stock_values = [stock.prices[-1] * self.owned_stocks[stock.name] for stock in self.stocks.values()]
+        stock_values = [stock.prices[-1] * self.owned_stocks[stock.name] for stock in self.stocks]
         total_portfolio_value = self.cash + sum(stock_values)
         return total_portfolio_value
 
-
-class Investor:
-    def __init__(self, portfolio: Portfolio, sell_threshold: float, buy_threshold: float, stop_loss_ratio: float, cash_ratio: float):
-        self.portfolio = portfolio
-        self.sell_threshold = sell_threshold
-        self.buy_threshold = buy_threshold
-        self.stop_loss_ratio = stop_loss_ratio
-        self.cash_ratio = cash_ratio
-        self.target_cash = portfolio.initial_cash
-
     def backtest_strategy(self):
-        self.portfolio.reset()
-        stock_prices = {stock_name: stock.prices for stock_name, stock in self.portfolio.stocks.items()}
+        self.reset()
+        stock_prices = {stock_name: stock.prices for stock_name, stock in self.stocks.items()}
         previous_buy_or_sell_prices = {stock_name: stock_price[0] for stock_name, stock_price in stock_prices.items()}
-        num_price_points = range(1, len(self.portfolio.stocks[next(iter(self.portfolio.stocks))].prices))
+        num_price_points = range(1, len(self.stocks[next(iter(self.stocks))].prices))
         self._buy_or_sell_stocks(num_price_points, stock_prices, previous_buy_or_sell_prices)
 
     def _buy_or_sell_stocks(self, num_price_points, stock_prices, previous_buy_or_sell_prices):
         for price_point_num in num_price_points:
-            owned_stocks = {k: v for k, v in self.portfolio.owned_stocks.items() if v > 0}
+            owned_stocks = {k: v for k, v in self.owned_stocks.items() if v > 0}
             for stock_name, prices in stock_prices.items():
                 current_price = prices[price_point_num]
                 previous_price = previous_buy_or_sell_prices[stock_name]
 
                 if stock_name in owned_stocks:
                     change_from_previous_point = (current_price - previous_price) / previous_price
-                    portfolio_value = self.portfolio.cash + sum([stock.prices[price_point_num] * self.portfolio.owned_stocks[stock.name] for stock in self.portfolio.stocks.values()])
+                    portfolio_value = self.cash + sum(
+                        [stock.prices[price_point_num] * self.owned_stocks[stock.name] for stock in self.stocks])
                     change_from_portfolio_value = (portfolio_value - self.target_cash) / self.target_cash
                     is_stoploss = change_from_portfolio_value <= -self.stop_loss_ratio
 
                     if change_from_previous_point >= self.sell_threshold or is_stoploss:
-                        self.portfolio.cash += current_price * self.portfolio.owned_stocks[stock_name]
-                        if self.portfolio.cash > self.target_cash:
-                            self.target_cash = self.portfolio.cash
-                        self.portfolio.owned_stocks[stock_name] = 0
+                        self.cash += current_price * self.owned_stocks[stock_name]
+                        if self.cash > self.target_cash:
+                            self.target_cash = self.cash
+                        self.owned_stocks[stock_name] = 0
                         previous_price = current_price
                         previous_buy_or_sell_prices[stock_name] = previous_price
+                        self.num_sells += 1
 
                 else:
                     change_from_previous_point = (current_price - previous_price) / previous_price
                     if change_from_previous_point <= -self.buy_threshold:
-                        n_stocks = floor(self.portfolio.cash * self.cash_ratio / current_price)  # Considering cash_ratio
-                        self.portfolio.cash -= n_stocks * current_price
-                        self.portfolio.owned_stocks[stock_name] = n_stocks
+                        n_stocks = floor(self.cash * self.cash_ratio / current_price)  # Considering cash_ratio
+                        self.cash -= n_stocks * current_price
+                        self.owned_stocks[stock_name] = n_stocks
                         previous_price = current_price
                         previous_buy_or_sell_prices[stock_name] = previous_price
+                        self.num_buys += 1
 
 
-async def evaluate(investor: Investor) -> Tuple[float]:
-    investor.backtest_strategy()
-    return investor.portfolio.total_value(),
-
-
-def mutate_investor(individual: Investor, mu: float, sigma: float, indpb: float):
+def mutate_investor(individual: InvestorPortfolio, mu: float, sigma: float, indpb: float):
     if random.random() < indpb:
         individual.sell_threshold = max(0, min(0.5, individual.sell_threshold + random.gauss(mu, sigma)))
     if random.random() < indpb:
@@ -110,13 +111,22 @@ def mutate_investor(individual: Investor, mu: float, sigma: float, indpb: float)
     return individual,
 
 
-def mate_investors(ind1: Investor, ind2: Investor):
+def mate_investors(ind1: InvestorPortfolio, ind2: InvestorPortfolio):
     ind1.sell_threshold, ind2.sell_threshold = ind2.sell_threshold, ind1.sell_threshold
     ind1.buy_threshold, ind2.buy_threshold = ind2.buy_threshold, ind1.buy_threshold
     ind1.stop_loss_ratio, ind2.stop_loss_ratio = ind2.stop_loss_ratio, ind1.stop_loss_ratio
     ind1.cash_ratio, ind2.cash_ratio = ind2.cash_ratio, ind1.cash_ratio
 
     return ind1, ind2
+
+
+async def evaluate(investor_portfolio: InvestorPortfolio) -> Tuple[float]:
+    investor_portfolio.reset()
+    stock_prices = {stock.name: stock.prices for stock in investor_portfolio.stocks}
+    previous_buy_or_sell_prices = {stock_name: stock_price[0] for stock_name, stock_price in stock_prices.items()}
+    num_price_points = range(1, len(investor_portfolio.stocks[0].prices))
+    investor_portfolio._buy_or_sell_stocks(num_price_points, stock_prices, previous_buy_or_sell_prices)
+    return investor_portfolio.total_value(),
 
 
 async def evaluate_population_async(population):
@@ -131,8 +141,8 @@ def evaluate_population(population):
         ind.fitness.values = fit
 
 
-def custom_eaSimple(population, toolbox, cxpb, mutpb, ngen, stats=None,
-             halloffame=None, verbose=__debug__):
+def custom_ea_simple(population, toolbox, cxpb, mutpb, ngen, stats=None,
+                     halloffame=None, verbose=__debug__):
     logbook = tools.Logbook()
     logbook.header = ['gen', 'nevals'] + (stats.fields if stats else [])
 
@@ -181,24 +191,40 @@ def custom_eaSimple(population, toolbox, cxpb, mutpb, ngen, stats=None,
 
 
 def main():
-    population = 500
-    generations = 1000
+    population_size = 50
+    num_generations = 100
 
-    initial_cash = 10000
-    num_stocks = 20  # Number of stocks in the portfolio
+    initial_investment = 10000
+    portfolio_size = 20  # Number of stocks in the portfolio
 
-    S0: float = 100
-    mu: float = 0
-    sigma: float = 0.2
-    T: float = 1
-    dt: float = 1 / 252 / 390
+    initial_stock_price = 100
+    expected_return = 0
+    volatility = 0.2
+    time_period = 1
+    time_step = 1 / 252 / 390  # Represents trading hours in a year
 
-    print(f'S0 {S0}, mu {mu}, sigma {sigma}, T {T}, dt {dt}, initial cash {initial_cash}, num stocks {num_stocks}')
+    crossover_probability = 0.5
+    mutation_probability = 0.2
 
-    stocks = [Stock(f'Stock{i}', S0, mu, sigma, T, dt, seed=42 + i) for i in range(num_stocks)]
+    print(f'Initial stock price: {initial_stock_price}')
+    print(f'Expected return: {expected_return}')
+    print(f'Volatility: {volatility}')
+    print(f'Time period: {time_period}')
+    print(f'Time step: {time_step}')
+    print(f'Initial investment: {initial_investment}')
+    print(f'Number of stocks in portfolio: {portfolio_size}')
+    print(f'Population size: {population_size}')
+    print(f'Number of generations: {num_generations}')
+    print(f'Crossover probability: {crossover_probability}')
+    print(f'Mutation probability: {mutation_probability}')
+
+    stocks = [
+        Stock(f'Stock{i}', initial_stock_price, expected_return, volatility, time_period, time_step, random_seed=42 + i)
+        for i in range(portfolio_size)]
+    InvestorPortfolio.set_stocks(stocks)
 
     creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-    creator.create("Investor", Investor, fitness=creator.FitnessMax)
+    creator.create("InvestorPortfolio", InvestorPortfolio, fitness=creator.FitnessMax)
 
     toolbox = base.Toolbox()
     toolbox.register("attr_sell", random.uniform, 0, 0.5)
@@ -207,11 +233,11 @@ def main():
     toolbox.register("attr_cash_ratio", random.uniform, 0, 1.0)
 
     def generate_new_investor():
-        return creator.Investor(Portfolio(stocks, initial_cash),
-                                sell_threshold=toolbox.attr_sell(),
-                                buy_threshold=toolbox.attr_buy(),
-                                stop_loss_ratio=toolbox.attr_stoploss(),
-                                cash_ratio=toolbox.attr_cash_ratio())  # Include cash_ratio
+        return creator.InvestorPortfolio(initial_investment,
+                                         sell_threshold=toolbox.attr_sell(),
+                                         buy_threshold=toolbox.attr_buy(),
+                                         stop_loss_ratio=toolbox.attr_stoploss(),
+                                         cash_ratio=toolbox.attr_cash_ratio())
 
     toolbox.register("investor", generate_new_investor)
 
@@ -222,7 +248,17 @@ def main():
     toolbox.register("mutate", mutate_investor, mu=0, sigma=0.1, indpb=0.1)
     toolbox.register("select", tools.selTournament, tournsize=3)
 
-    pop = toolbox.population(n=population)
+    top_performers = [
+        creator.InvestorPortfolio(initial_investment, sell_threshold=0.3, buy_threshold=0.1, stop_loss_ratio=0.2,
+                                  cash_ratio=0.4),
+        creator.InvestorPortfolio(initial_investment, sell_threshold=0.3, buy_threshold=0.1, stop_loss_ratio=0.2,
+                                  cash_ratio=0.4),
+        creator.InvestorPortfolio(initial_investment, sell_threshold=0.25, buy_threshold=0.15, stop_loss_ratio=0.18,
+                                  cash_ratio=0.5),
+    ]
+
+    pop = toolbox.population(n=population_size - len(top_performers)) + top_performers
+
     hof = tools.HallOfFame(5)
     stats = tools.Statistics(lambda ind: ind.fitness.values)
     stats.register("avg", np.mean)
@@ -230,18 +266,30 @@ def main():
     stats.register("max", np.max)
 
     try:
-        pop, log = custom_eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.2, ngen=generations, stats=stats, halloffame=hof, verbose=True)
-    except KeyboardInterrupt:
-        pass
+        _, _ = custom_ea_simple(
+            pop, toolbox,
+            cxpb=crossover_probability,
+            mutpb=mutation_probability,
+            ngen=num_generations,
+            stats=stats,
+            halloffame=hof,
+            verbose=True
+        )
+    except KeyboardInterrupt as e:
+        print(e)
 
     if hof:
         for i in range(0, len(hof)):
-            individual = hof[i]
-            print(f"Individual {i+1} is: sell_threshold={individual.sell_threshold:.3f}, "
+            individual: creator.InvestorPortfolio = hof[i]
+            print(f"Individual {i + 1} is: "
+                  f"initial_cash={individual.initial_cash:.3f}, "
+                  f"sell_threshold={individual.sell_threshold:.3f}, "
                   f"buy_threshold={individual.buy_threshold:.3f}, "
                   f"stop_loss_ratio={individual.stop_loss_ratio:.3f}, "
                   f"cash_ratio={hof[i].cash_ratio:.3f}\n"
-                  f"with fitness: {individual.fitness}")
+                  f"with fitness: {individual.fitness}, "
+                  f"total buys: {individual.num_buys}, "
+                  f"total sells: {individual.num_sells}")
 
 
 if __name__ == '__main__':
@@ -250,6 +298,7 @@ if __name__ == '__main__':
         import cProfile
         import pstats
         from io import StringIO
+
         pr = cProfile.Profile()
         pr.enable()
         main()
