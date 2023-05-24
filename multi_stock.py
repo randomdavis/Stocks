@@ -181,11 +181,11 @@ def custom_eaSimple(population, toolbox, cxpb, mutpb, ngen, stats=None,
 
 
 def main():
-    population = 20
-    generations = 15
+    population = 500
+    generations = 1000
 
     initial_cash = 10000
-    num_stocks = 5  # Number of stocks in the portfolio
+    num_stocks = 20  # Number of stocks in the portfolio
 
     S0: float = 100
     mu: float = 0
