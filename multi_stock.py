@@ -5,7 +5,7 @@ from math import floor
 from deap import base, creator, tools, algorithms
 import random
 from typing import List, Tuple
-from scipy.stats import skew, kurtosis
+import sys
 
 
 class Stock:
@@ -48,6 +48,14 @@ class InvestorPortfolio:
         self.num_buys = 0
         self.num_sells = 0
 
+    def __eq__(self, other):
+        same = self.sell_threshold == other.sell_threshold and \
+               self.buy_threshold == other.buy_threshold and \
+               self.stop_loss_ratio == other.stop_loss_ratio and \
+               self.cash_ratio == other.cash_ratio
+
+        return same
+
     def reset(self):
         self.cash = self.initial_cash
         for stock_name in self.owned_stocks:
@@ -55,44 +63,41 @@ class InvestorPortfolio:
 
     def final_value(self):
         stock_values = [stock.prices[-1] * self.owned_stocks[stock.name] for stock in self.stocks]
-        total_portfolio_value = self.cash + sum(stock_values)
+        total_portfolio_value = self.cash + np.sum(stock_values)
         return total_portfolio_value
 
     def backtest_strategy(self, range_price_points, stock_prices, previous_buy_or_sell_prices):
-        stock_names = list(stock_prices)
-        stocks = [[stock for stock in stock_prices[name]] for name in stock_names]
         for price_point_num in range_price_points:
-            for stocks_num in range(len(stocks)):
-                stock_name = stock_names[stocks_num]
-                prices = stocks[stocks_num]
-                current_price = prices[price_point_num]
-                previous_price = previous_buy_or_sell_prices[stock_name]
+            current_prices = stock_prices[:, price_point_num]
+            previous_prices = np.array([previous_buy_or_sell_prices[stock_name] for stock_name in self.owned_stocks])
 
+            # Calculate the changes and replace the nested loop with vectorized operations
+            change_from_previous_point = (current_prices - previous_prices) / previous_prices
+            portfolio_value = self.cash + np.sum(stock_prices[:, price_point_num] * list(self.owned_stocks.values()))
+            change_from_portfolio_value = (portfolio_value - self.target_cash) / self.target_cash
+            is_stoploss = change_from_portfolio_value <= -self.stop_loss_ratio
+
+            # Update the stocks and cash with a single loop
+            for i, stock_name in enumerate(self.owned_stocks):
                 if self.owned_stocks[stock_name] > 0:
-                    change_from_previous_point = (current_price - previous_price) / previous_price
-                    portfolio_value = self.cash + sum(
-                        [stock.prices[price_point_num] * self.owned_stocks[stock.name] for stock in self.stocks])
-                    change_from_portfolio_value = (portfolio_value - self.target_cash) / self.target_cash
-                    is_stoploss = change_from_portfolio_value <= -self.stop_loss_ratio
-
-                    if change_from_previous_point >= self.sell_threshold or is_stoploss:
-                        self.cash += current_price * self.owned_stocks[stock_name]
-                        if self.cash > self.target_cash:
-                            self.target_cash = self.cash
+                    if change_from_previous_point[i] >= self.sell_threshold or is_stoploss:
+                        sell_price = current_prices[i] * self.owned_stocks[stock_name]
+                        self.cash += sell_price
                         self.owned_stocks[stock_name] = 0
-                        previous_price = current_price
-                        previous_buy_or_sell_prices[stock_name] = previous_price
-                        self.num_sells += 1
 
+                        if portfolio_value > self.target_cash:
+                            self.target_cash = portfolio_value
+
+                        previous_buy_or_sell_prices[stock_name] = current_prices[i]
+                        self.num_sells += 1
                 else:
-                    change_from_previous_point = (current_price - previous_price) / previous_price
-                    if change_from_previous_point <= -self.buy_threshold:
-                        n_stocks = floor(self.cash * self.cash_ratio / current_price)
-                        self.cash -= n_stocks * current_price
-                        self.owned_stocks[stock_name] = n_stocks
-                        previous_price = current_price
-                        previous_buy_or_sell_prices[stock_name] = previous_price
-                        self.num_buys += 1
+                    if change_from_previous_point[i] <= -self.buy_threshold:
+                        n_stocks = floor(self.cash * self.cash_ratio / current_prices[i])
+                        if n_stocks > 0:
+                            self.cash -= n_stocks * current_prices[i]
+                            self.owned_stocks[stock_name] = n_stocks
+                            previous_buy_or_sell_prices[stock_name] = current_prices[i]
+                            self.num_buys += 1
 
 
 def mate_investors(ind1: InvestorPortfolio, ind2: InvestorPortfolio):
@@ -144,11 +149,17 @@ def mutate_investor(individual: InvestorPortfolio, mutation_probability: float, 
     return individual,
 
 
+def preprocess_strategy_data(stocks):
+    stock_names = [stock.name for stock in stocks]
+    stock_prices = np.array([stock.prices for stock in stocks])
+    return stock_names, stock_prices
+
+
 async def evaluate(investor_portfolio: InvestorPortfolio) -> Tuple[float]:
     investor_portfolio.reset()
-    stock_prices = {stock.name: stock.prices for stock in investor_portfolio.stocks}
-    previous_buy_or_sell_prices = {stock_name: stock_price[0] for stock_name, stock_price in stock_prices.items()}
-    num_price_points = range(1, len(investor_portfolio.stocks[0].prices))
+    stock_names, stock_prices = preprocess_strategy_data(investor_portfolio.stocks)
+    previous_buy_or_sell_prices = {stock_name: stock_prices[i, 0] for i, stock_name in enumerate(stock_names)}
+    num_price_points = range(1, stock_prices.shape[1])
     investor_portfolio.backtest_strategy(num_price_points, stock_prices, previous_buy_or_sell_prices)
     return investor_portfolio.final_value(),
 
@@ -162,6 +173,8 @@ async def evaluate_population_async(population):
 def evaluate_population(population):
     results = asyncio.run(evaluate_population_async(population))
     for ind, fit in zip(population, results):
+        if np.isnan(fit):  # Check if fitness value is NaN
+            fit = -np.inf  # Set fitness to negative infinity if NaN
         ind.fitness.values = fit
 
 
@@ -215,23 +228,23 @@ def custom_ea_simple(population, toolbox, cxpb, mutpb, ngen, stats=None,
 
 
 def main():
-    population_size = 50
-    num_generations = 10
+    population_size = 100
+    num_generations = 1000
 
-    initial_investment = 10000.0
-    portfolio_size = 20  # Number of stocks in the portfolio
+    initial_investment = 1000.0
+    portfolio_size = 10  # Number of stocks in the portfolio
 
-    initial_stock_price = 300.0
-    expected_return = 0.0
-    volatility = 0.1
+    initial_stock_price = 20.0
+    expected_return = 0.1
+    volatility = 0.2
     time_period = 1.0
     time_step = 1.0 / 252.0 / 390.0  # Represents trading hours in a year
     price_points = int(round(time_period / time_step))  # might be one off
 
-    crossover_probability = 0.6
+    crossover_probability = 0.5
     mutation_probability = 0.1
     mutation_strength = 0.5
-    tournament_size = 2
+    tournament_size = 3
 
     num_top_scorers_shown = 5
 
@@ -267,7 +280,7 @@ def main():
     toolbox = base.Toolbox()
     toolbox.register("attr_sell", random.uniform, 0, 0.5)
     toolbox.register("attr_buy", random.uniform, 0, 0.5)
-    toolbox.register("attr_stoploss", random.uniform, 0, 0.5)
+    toolbox.register("attr_stoploss", random.uniform, 0, 1.0)
     toolbox.register("attr_cash_ratio", random.uniform, 0, 1.0)
 
     print('Generating investor portfolios')
@@ -307,8 +320,6 @@ def main():
     stats.register("std", np.std)
     stats.register("median", np.median)
     stats.register("var", np.var)
-    stats.register("skewness", skew)
-    stats.register("kurtosis", kurtosis)
 
     print('Beginning simulation')
 
