@@ -233,8 +233,8 @@ def main():
     num_top_scorers_shown = 5
 
     print(f'Initial stock price: ${repr(initial_stock_price)}')
-    print(f'Expected return: {repr(expected_return)}%')
-    print(f'Volatility: {repr(volatility)}%')
+    print(f'Expected return: {repr(expected_return * 100)}%')
+    print(f'Volatility: {repr(volatility * 100)}%')
     print(f'Time period: {time_period}')
     print(f'Time step: {repr(time_step)}')
     print(f'Price Points: {price_points}')
@@ -330,9 +330,9 @@ def main():
             print(f"Individual {i + 1} is: \n"
                   f"\tInitial Cash ${repr(individual.initial_cash)}\n"
                   f"\tSell Threshold {repr(individual.sell_threshold * 100)}%\n"
-                  f"\tBuy Threshold {repr(individual.buy_threshold) * 100}%\n"
-                  f"\tStop Loss Ratio {repr(individual.stop_loss_ratio) * 100}%\n"
-                  f"\tCash Ratio {repr(individual.cash_ratio) * 100}%\n"
+                  f"\tBuy Threshold {repr(individual.buy_threshold * 100)}%\n"
+                  f"\tStop Loss Ratio {repr(individual.stop_loss_ratio * 100)}%\n"
+                  f"\tCash Ratio {repr(individual.cash_ratio * 100)}%\n"
                   f"\tFinal Cash: ${repr(individual.fitness.values[0])}\n"
                   f"\ttotal buys: {individual.num_buys}\n"
                   f"\ttotal sells: {individual.num_sells}\n")
