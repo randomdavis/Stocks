@@ -228,21 +228,21 @@ def custom_ea_simple(population, toolbox, cxpb, mutpb, ngen, stats=None,
 
 
 def main():
-    population_size = 100
+    population_size = 50
     num_generations = 1000
 
     initial_investment = 1000.0
-    portfolio_size = 10  # Number of stocks in the portfolio
+    portfolio_size = 5  # Number of stocks in the portfolio
 
-    initial_stock_price = 20.0
-    expected_return = 0.1
+    initial_stock_price = 50.0
+    expected_return = 0.0
     volatility = 0.2
     time_period = 1.0
     time_step = 1.0 / 252.0 / 390.0  # Represents trading hours in a year
     price_points = int(round(time_period / time_step))  # might be one off
 
     crossover_probability = 0.5
-    mutation_probability = 0.1
+    mutation_probability = 0.2
     mutation_strength = 0.5
     tournament_size = 3
 
@@ -306,8 +306,8 @@ def main():
                                   cash_ratio=1.000),
         creator.InvestorPortfolio(initial_investment, sell_threshold=0.3, buy_threshold=0.1, stop_loss_ratio=0.2,
                                   cash_ratio=0.4),
-        creator.InvestorPortfolio(initial_investment, sell_threshold=0.25, buy_threshold=0.15, stop_loss_ratio=0.18,
-                                  cash_ratio=0.5),
+        creator.InvestorPortfolio(initial_investment, sell_threshold=0.12, buy_threshold=0.018283572590412491, stop_loss_ratio=0.5,
+                                  cash_ratio=1.0),
     ]
 
     pop = toolbox.population(n=population_size - len(top_performers)) + top_performers
