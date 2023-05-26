@@ -24,8 +24,8 @@ class Stock:
         num_steps = len(time_array)
         random_walk = np.random.standard_normal(size=num_steps)
         random_walk = np.cumsum(random_walk, dtype="float32") * np.sqrt(time_step)
-        return initial_stock_price * np.exp(
-            (expected_return - 0.5 * volatility ** 2) * time_array + volatility * random_walk)
+        return np.array(initial_stock_price * np.exp(
+            (expected_return - 0.5 * volatility ** 2) * time_array + volatility * random_walk), dtype="float32")
 
 
 class InvestorPortfolio:
@@ -59,15 +59,16 @@ class InvestorPortfolio:
         return total_portfolio_value
 
     def backtest_strategy(self, range_price_points, stock_prices, previous_buy_or_sell_prices):
-        stock_names = stock_prices.keys()
+        stock_names = list(stock_prices)
+        stocks = [[stock for stock in stock_prices[name]] for name in stock_names]
         for price_point_num in range_price_points:
-            owned_stocks = {k: v for k, v in self.owned_stocks.items() if v > 0}
-            for stock_name in stock_names:
-                prices = stock_prices[stock_name]
+            for stocks_num in range(len(stocks)):
+                stock_name = stock_names[stocks_num]
+                prices = stocks[stocks_num]
                 current_price = prices[price_point_num]
                 previous_price = previous_buy_or_sell_prices[stock_name]
 
-                if stock_name in owned_stocks:
+                if self.owned_stocks[stock_name] > 0:
                     change_from_previous_point = (current_price - previous_price) / previous_price
                     portfolio_value = self.cash + sum(
                         [stock.prices[price_point_num] * self.owned_stocks[stock.name] for stock in self.stocks])
@@ -215,29 +216,29 @@ def custom_ea_simple(population, toolbox, cxpb, mutpb, ngen, stats=None,
 
 def main():
     population_size = 50
-    num_generations = 1000
+    num_generations = 10
 
-    initial_investment = 1000.0
+    initial_investment = 10000.0
     portfolio_size = 20  # Number of stocks in the portfolio
 
-    initial_stock_price = 100.0
+    initial_stock_price = 300.0
     expected_return = 0.0
-    volatility = 0.03
+    volatility = 0.1
     time_period = 1.0
     time_step = 1.0 / 252.0 / 390.0  # Represents trading hours in a year
     price_points = int(round(time_period / time_step))  # might be one off
 
     crossover_probability = 0.6
     mutation_probability = 0.1
-    mutation_strength = 0.9
-    tournament_size = 3
+    mutation_strength = 0.5
+    tournament_size = 2
 
     num_top_scorers_shown = 5
 
     print(f'Initial stock price: ${repr(initial_stock_price)}')
     print(f'Expected return: {repr(expected_return * 100)}%')
     print(f'Volatility: {repr(volatility * 100)}%')
-    print(f'Time period: {time_period}')
+    print(f'Time period: {time_period} Year{"s" if time_period > 1 else ""}')
     print(f'Time step: {repr(time_step)}')
     print(f'Price Points: {price_points}')
     print(f'Initial investment: ${repr(initial_investment)}')
@@ -323,8 +324,6 @@ def main():
         )
     except KeyboardInterrupt:
         print('Simulation interrupted by user')
-    except Exception as e:
-        print(e)
 
     if hof:
         for i in range(0, len(hof)):
