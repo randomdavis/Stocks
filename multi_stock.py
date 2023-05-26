@@ -58,10 +58,12 @@ class InvestorPortfolio:
         total_portfolio_value = self.cash + sum(stock_values)
         return total_portfolio_value
 
-    def backtest_strategy(self, num_price_points, stock_prices, previous_buy_or_sell_prices):
-        for price_point_num in num_price_points:
+    def backtest_strategy(self, range_price_points, stock_prices, previous_buy_or_sell_prices):
+        stock_names = stock_prices.keys()
+        for price_point_num in range_price_points:
             owned_stocks = {k: v for k, v in self.owned_stocks.items() if v > 0}
-            for stock_name, prices in stock_prices.items():
+            for stock_name in stock_names:
+                prices = stock_prices[stock_name]
                 current_price = prices[price_point_num]
                 previous_price = previous_buy_or_sell_prices[stock_name]
 
