@@ -6,13 +6,13 @@ from deap import base, creator, tools, algorithms
 import random
 from typing import List, Tuple
 from scipy.stats import skew, kurtosis
-from operator import attrgetter
+
 
 class Stock:
     def __init__(self, name: str, initial_stock_price: float, expected_return: float, volatility: float,
                  time_period: float, time_step: float, random_seed: int = 42):
         self.name = name
-        self.prices = None
+        self.prices = np.array([], dtype="float32")
         self.parameters = (initial_stock_price, expected_return, volatility, time_period, time_step, random_seed)
         self.prices = self.calculate_geometric_brownian_motion(*self.parameters)
 
@@ -20,10 +20,10 @@ class Stock:
     def calculate_geometric_brownian_motion(initial_stock_price: float, expected_return: float, volatility: float,
                                             time_period: float, time_step: float, random_seed: int) -> np.ndarray:
         np.random.seed(random_seed)
-        time_array = np.linspace(0, time_period, int(time_period / time_step))
+        time_array = np.linspace(0, time_period, int(time_period / time_step), dtype="float32")
         num_steps = len(time_array)
         random_walk = np.random.standard_normal(size=num_steps)
-        random_walk = np.cumsum(random_walk) * np.sqrt(time_step)
+        random_walk = np.cumsum(random_walk, dtype="float32") * np.sqrt(time_step)
         return initial_stock_price * np.exp(
             (expected_return - 0.5 * volatility ** 2) * time_array + volatility * random_walk)
 
@@ -220,7 +220,7 @@ def main():
 
     initial_stock_price = 100.0
     expected_return = 0.0
-    volatility = 0.2
+    volatility = 0.03
     time_period = 1.0
     time_step = 1.0 / 252.0 / 390.0  # Represents trading hours in a year
     price_points = int(round(time_period / time_step))  # might be one off
