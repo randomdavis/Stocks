@@ -5,7 +5,7 @@ from math import floor
 from deap import base, creator, tools, algorithms
 import random
 from typing import List, Tuple
-import sys
+import time
 
 
 class Stock:
@@ -178,22 +178,43 @@ def evaluate_population(population):
         ind.fitness.values = fit
 
 
+def pretty_time(seconds):
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{int(hours)}h{int(minutes)}m{seconds:.1f}s"
+
+
 def custom_ea_simple(population, toolbox, cxpb, mutpb, ngen, stats=None,
                      halloffame=None, verbose=__debug__):
+    generation_start_time = 0.0
+    total_time = 0.0
+
     logbook = tools.Logbook()
-    logbook.header = ['gen', 'nevals'] + (stats.fields if stats else [])
+    logbook.header = ['gen', 'nevals', 'generation_time', 'total_time', 'time_per_evaluation', 'estimated_total_time'] + (stats.fields if stats else [])
 
     # Evaluate the individuals with an invalid fitness
     invalid_ind = [ind for ind in population if not ind.fitness.valid]
 
-    # Evaluate the entire population in parallel
+    # Evaluate the entire population
+    initial_evaluation_start_time = time.time()
     toolbox.evaluate(invalid_ind)
+    initial_evaluation_time = time.time() - initial_evaluation_start_time
+    total_time += initial_evaluation_time
+
+    time_per_evaluation_initial = initial_evaluation_time / len(invalid_ind)
+
+    estimated_total_time_initial = time_per_evaluation_initial * ngen * len(population)
 
     if halloffame is not None:
         halloffame.update(population)
 
     record = stats.compile(population) if stats else {}
-    logbook.record(gen=0, nevals=len(invalid_ind), **record)
+    logbook.record(gen=0, nevals=len(invalid_ind),
+                   generation_time=pretty_time(initial_evaluation_time),
+                   total_time=pretty_time(total_time),
+                   time_per_evaluation=pretty_time(time_per_evaluation_initial),
+                   estimated_total_time=pretty_time(estimated_total_time_initial),
+                   **record)
     if verbose:
         print(logbook.stream)
 
@@ -209,7 +230,10 @@ def custom_ea_simple(population, toolbox, cxpb, mutpb, ngen, stats=None,
         invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
 
         # Evaluate the entire offspring population in parallel
+        generation_start_time = time.time()
         toolbox.evaluate(invalid_ind)
+        generation_time = time.time() - generation_start_time
+        total_time += generation_time
 
         # Update the hall of fame with the generated individuals
         if halloffame is not None:
@@ -218,9 +242,22 @@ def custom_ea_simple(population, toolbox, cxpb, mutpb, ngen, stats=None,
         # Replace the current population by the offspring
         population[:] = offspring
 
+        nevals = len(invalid_ind)
+
+        # Calculate timing information
+        if nevals != 0:
+            time_per_evaluation = generation_time / nevals
+        else:
+            time_per_evaluation = generation_time
+        estimated_total_time = total_time / gen * ngen
+
         # Append the current generation statistics to the logbook
         record = stats.compile(population) if stats else {}
-        logbook.record(gen=gen, nevals=len(invalid_ind), **record)
+        logbook.record(gen=gen, nevals=nevals, **record,
+                       generation_time=pretty_time(generation_time),
+                       total_time=pretty_time(total_time),
+                       time_per_evaluation=pretty_time(time_per_evaluation),
+                       estimated_total_time=pretty_time(estimated_total_time))
         if verbose:
             print(logbook.stream)
 
@@ -228,7 +265,7 @@ def custom_ea_simple(population, toolbox, cxpb, mutpb, ngen, stats=None,
 
 
 def main():
-    population_size = 50
+    population_size = 20
     num_generations = 1000
 
     initial_investment = 1000.0
