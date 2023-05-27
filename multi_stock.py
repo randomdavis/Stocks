@@ -1,5 +1,3 @@
-import asyncio
-
 import numpy as np
 from math import floor
 from deap import base, creator, tools, algorithms
@@ -155,7 +153,7 @@ def preprocess_strategy_data(stocks):
     return stock_names, stock_prices
 
 
-async def evaluate(investor_portfolio: InvestorPortfolio) -> Tuple[float]:
+def evaluate(investor_portfolio: InvestorPortfolio) -> Tuple[float]:
     investor_portfolio.reset()
     stock_names, stock_prices = preprocess_strategy_data(investor_portfolio.stocks)
     previous_buy_or_sell_prices = {stock_name: stock_prices[i, 0] for i, stock_name in enumerate(stock_names)}
@@ -164,14 +162,8 @@ async def evaluate(investor_portfolio: InvestorPortfolio) -> Tuple[float]:
     return investor_portfolio.final_value(),
 
 
-async def evaluate_population_async(population):
-    coroutines = [evaluate(individual) for individual in population]
-    results = await asyncio.gather(*coroutines)
-    return results
-
-
 def evaluate_population(population):
-    results = asyncio.run(evaluate_population_async(population))
+    results = [evaluate(individual) for individual in population]
     for ind, fit in zip(population, results):
         if np.isnan(fit):  # Check if fitness value is NaN
             fit = -np.inf  # Set fitness to negative infinity if NaN
