@@ -11,65 +11,7 @@ import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 
 
-def plot_stock_prices(stocks):
-    fig = make_subplots(rows=len(stocks), cols=1, shared_xaxes=True, subplot_titles=[stock.name for stock in stocks])
-    for i, stock in enumerate(stocks, start=1):
-        fig.add_trace(go.Scatter(y=stock.prices, x=list(range(len(stock.prices))),
-                                 mode='lines', name=stock.name), row=i, col=1)
-    fig.update_layout(height=200*len(stocks), width=900, title_text="Stock Prices over Time")
-    fig.show()
 
-
-def plot_signals(best_individual):
-    fig = make_subplots(rows=len(best_individual.stocks), cols=1, shared_xaxes=True,
-                        subplot_titles=[stock.name for stock in best_individual.stocks])
-    for i, stock in enumerate(best_individual.stocks, start=1):
-        fig.add_trace(go.Scatter(y=stock.prices, x=list(range(len(stock.prices))),
-                                 mode='lines', name=stock.name), row=i, col=1)
-        buys = [trade for trade in best_individual.trade_history if 'Buy' in trade and stock.name in trade]
-        sells = [trade for trade in best_individual.trade_history if 'Sell' in trade and stock.name in trade]
-        buy_x, buy_y = [], []
-        for buy in buys:
-            idx = int(buy.split(': ')[0])
-            buy_x.append(idx)
-            buy_y.append(stock.prices[idx])
-        sell_x, sell_y = [], []
-        for sell in sells:
-            idx = int(sell.split(': ')[0])
-            sell_x.append(idx)
-            sell_y.append(stock.prices[idx])
-        fig.add_trace(go.Scatter(x=buy_x, y=buy_y, mode='markers',
-                                 marker=dict(size=10, color='green', symbol='triangle-up'), name=f'Buy {stock.name}'),
-                      row=i, col=1)
-        fig.add_trace(go.Scatter(x=sell_x, y=sell_y, mode='markers',
-                                 marker=dict(size=10, color='red', symbol='triangle-down'), name=f'Sell {stock.name}'),
-                      row=i, col=1)
-    fig.update_layout(height=200 * len(best_individual.stocks), width=900,
-                      title_text="Best Individual's Buy/Sell signals")
-    fig.show()
-
-
-def plot_fitness_evolution(logbook):
-    fig = go.Figure()
-
-    fig.add_trace(go.Scatter(x=logbook.select('gen'), y=logbook.select('avg'),
-                             mode='lines', name='Average'))
-    fig.add_trace(go.Scatter(x=logbook.select('gen'), y=logbook.select('max'),
-                             mode='lines', name='Maximum'))
-    fig.add_trace(go.Scatter(x=logbook.select('gen'), y=logbook.select('min'),
-                             mode='lines', name='Minimum'))
-    fig.update_layout(title='Evolution of Fitness over Generations',
-                      xaxis_title='Generation', yaxis_title='Fitness')
-    fig.show()
-
-
-def plot_histogram(population, title):
-    fitness_values = [ind.fitness.values[0] for ind in population]
-    fig = go.Figure()
-    fig.add_trace(go.Histogram(x=fitness_values, nbinsx=20))
-    fig.update_layout(title=title,
-                      xaxis_title='Fitness', yaxis_title='Count')
-    fig.show()
 
 
 random.seed(42)
@@ -246,6 +188,7 @@ class StockTradingSimulation:
         estimated_total_time_initial = time_per_evaluation_initial * self.num_generations * len(self.pop)
         if self.hof is not None:
             self.hof.update(self.pop)
+        self.populations_to_store[0] = self.pop.copy()
         record = self.stats.compile(self.pop) if self.stats else {}
         self.logbook.record(gen=0, nevals=len(invalid_ind),
                        generation_time=pretty_time(initial_evaluation_time),
@@ -486,6 +429,67 @@ def pretty_time(seconds):
     minutes, seconds = divmod(seconds, 60)
     hours, minutes = divmod(minutes, 60)
     return f"{int(hours)}h{int(minutes)}m{seconds:.3f}s"
+
+
+def plot_stock_prices(stocks):
+    fig = make_subplots(rows=len(stocks), cols=1, shared_xaxes=True, subplot_titles=[stock.name for stock in stocks])
+    for i, stock in enumerate(stocks, start=1):
+        fig.add_trace(go.Scatter(y=stock.prices, x=list(range(len(stock.prices))),
+                                 mode='lines', name=stock.name), row=i, col=1)
+    fig.update_layout(height=200*len(stocks), width=900, title_text="Stock Prices over Time")
+    fig.show()
+
+
+def plot_signals(best_individual):
+    fig = make_subplots(rows=len(best_individual.stocks), cols=1, shared_xaxes=True,
+                        subplot_titles=[stock.name for stock in best_individual.stocks])
+    for i, stock in enumerate(best_individual.stocks, start=1):
+        fig.add_trace(go.Scatter(y=stock.prices, x=list(range(len(stock.prices))),
+                                 mode='lines', name=stock.name), row=i, col=1)
+        buys = [trade for trade in best_individual.trade_history if 'Buy' in trade and stock.name in trade]
+        sells = [trade for trade in best_individual.trade_history if 'Sell' in trade and stock.name in trade]
+        buy_x, buy_y = [], []
+        for buy in buys:
+            idx = int(buy.split(': ')[0])
+            buy_x.append(idx)
+            buy_y.append(stock.prices[idx])
+        sell_x, sell_y = [], []
+        for sell in sells:
+            idx = int(sell.split(': ')[0])
+            sell_x.append(idx)
+            sell_y.append(stock.prices[idx])
+        fig.add_trace(go.Scatter(x=buy_x, y=buy_y, mode='markers',
+                                 marker=dict(size=10, color='green', symbol='triangle-up'), name=f'Buy {stock.name}'),
+                      row=i, col=1)
+        fig.add_trace(go.Scatter(x=sell_x, y=sell_y, mode='markers',
+                                 marker=dict(size=10, color='red', symbol='triangle-down'), name=f'Sell {stock.name}'),
+                      row=i, col=1)
+    fig.update_layout(height=200 * len(best_individual.stocks), width=900,
+                      title_text="Best Individual's Buy/Sell signals")
+    fig.show()
+
+
+def plot_fitness_evolution(logbook):
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(x=logbook.select('gen'), y=logbook.select('avg'),
+                             mode='lines', name='Average'))
+    fig.add_trace(go.Scatter(x=logbook.select('gen'), y=logbook.select('max'),
+                             mode='lines', name='Maximum'))
+    fig.add_trace(go.Scatter(x=logbook.select('gen'), y=logbook.select('min'),
+                             mode='lines', name='Minimum'))
+    fig.update_layout(title='Evolution of Fitness over Generations',
+                      xaxis_title='Generation', yaxis_title='Fitness')
+    fig.show()
+
+
+def plot_histogram(population, title):
+    fitness_values = [ind.fitness.values[0] for ind in population]
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(x=fitness_values, nbinsx=20))
+    fig.update_layout(title=title,
+                      xaxis_title='Fitness', yaxis_title='Count')
+    fig.show()
 
 
 def main():
