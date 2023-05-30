@@ -22,11 +22,11 @@ TRADE_HISTORY = True
 
 class StockTradingSimulation:
     def __init__(self):
-        self.population_size: int = 500
-        self.num_generations: int = 10000
+        self.population_size: int = 10000
+        self.num_generations: int = 1000
         self.initial_investment = 10000.0
-        self.portfolio_size: int = 10
-        self.initial_stock_price = 300.0
+        self.portfolio_size: int = 5
+        self.initial_stock_price = 100.0
         self.expected_return = -0.5
         self.volatility = 0.2
         self.time_period = 1.0
@@ -34,12 +34,11 @@ class StockTradingSimulation:
         self.price_points: int = 1000
         self.time_step = 1.0 / self.price_points
         self.crossover_probability = 0.6
-        self.mutation_probability = 0.1
-        self.mutation_strength = 0.8
-        self.tournament_size: int = 7
+        self.mutation_probability = 0.2
+        self.mutation_deviation = 0.8
+        self.tournament_size: int = 5
         self.values_lower_bound = 0.0
         self.values_upper_bound = 1.0
-        self.mutation_deviation = 0.1
         self.num_top_scorers_shown: int = 10
         self.toolbox = base.Toolbox()
         self.pop = None
@@ -62,7 +61,6 @@ class StockTradingSimulation:
         print(f'Number of generations: {self.num_generations}')
         print(f'Crossover probability: {repr(self.crossover_probability * 100)}%')
         print(f'Mutation probability: {repr(self.mutation_probability * 100)}%')
-        print(f'Mutation strength: {repr(self.mutation_strength * 100)}%')
         print(f'Mutation deviation: {repr(self.mutation_deviation * 100)}%')
         print(f'Tournament size: {self.tournament_size}')
 
@@ -105,7 +103,7 @@ class StockTradingSimulation:
             (0.12329535956096988, 0.023, 0.4968684247982979, 0.5, 1.0),
             (0.2101871334368854, 0.1092842466932408, 0.5, 0.9345442264099624, 1.0),
             (0.09066665291688599, 0.15307444708196606, 0.4549144125520966, 0.9997072061611406, 1.0),
-            (0.20230756367917923, 0.1088805122404803, 0.9893778894122727, 0.9939994206565086, 1.0),
+            (0.0049017380237213765, 0.08814804933060017, 1.0, 0.9999947291158924, 1.0),
         ]
 
         top_performers = [
@@ -131,10 +129,10 @@ class StockTradingSimulation:
             self.custom_ea_simple(verbose=True)
         except KeyboardInterrupt:
             print('Simulation interrupted by user')
-        if self.hof:
-            self.best_individual = self.hof[0]
-            self.populations_to_store[self.num_generations] = self.pop.copy()
-            self.populations_to_store[self.num_generations // 2] = self.pop.copy()
+            if self.hof:
+                self.best_individual = self.hof[0]
+                self.populations_to_store[self.num_generations] = self.pop.copy()
+                self.populations_to_store[self.num_generations // 2] = self.pop.copy()
 
     @staticmethod
     def print_individual(i, ind):
@@ -218,8 +216,8 @@ class StockTradingSimulation:
             # Replace the current population by the offspring
             self.pop[:] = offspring[:-1] + [self.hof[0]]
             # Store the population if the current generation is in populations_to_store
-            if gen - 1 in self.populations_to_store:
-                self.populations_to_store[gen - 1] = self.pop.copy()
+            if gen in self.populations_to_store:
+                self.populations_to_store[gen] = self.pop.copy()
             nevals = len(invalid_ind)
             # Calculate timing information
             if nevals != 0:
@@ -236,6 +234,7 @@ class StockTradingSimulation:
                            estimated_total_time=pretty_time(estimated_total_time))
             if verbose:
                 print(self.logbook.stream)
+        self.best_individual = self.hof[0]
 
 
 class Stock:
@@ -413,7 +412,7 @@ def preprocess_strategy_data(stocks):
 def evaluate(investor_portfolio: InvestorPortfolio):
     investor_portfolio.reset()
     investor_portfolio.backtest_strategy()
-    return (investor_portfolio.final_value()/investor_portfolio.initial_cash) ** 4.0
+    return (1.0 + investor_portfolio.final_value()/investor_portfolio.initial_cash) ** 4.0
 
 
 def evaluate_population(population):
@@ -486,7 +485,7 @@ def plot_fitness_evolution(logbook):
 def plot_histogram(population, title):
     fitness_values = [ind.fitness.values[0] for ind in population]
     fig = go.Figure()
-    fig.add_trace(go.Histogram(x=fitness_values, nbinsx=20))
+    fig.add_trace(go.Histogram(x=fitness_values, nbinsx=200))
     fig.update_layout(title=title,
                       xaxis_title='Fitness', yaxis_title='Count')
     fig.show()
@@ -501,9 +500,8 @@ def main():
         plot_signals(simulator.best_individual)
     if simulator.logbook:
         plot_fitness_evolution(simulator.logbook)
-        plot_histogram(simulator.populations_to_store[0], 'Histogram of Initial Population Fitness')
-        plot_histogram(simulator.populations_to_store[simulator.num_generations // 2], 'Histogram of Mid-point Population Fitness')
-        plot_histogram(simulator.populations_to_store[simulator.num_generations], 'Histogram of Final Population Fitness')
+        for generation in simulator.populations_to_store:
+            plot_histogram(simulator.populations_to_store[generation], f'Histogram of Generation {generation} Fitness')
 
 
 if __name__ == '__main__':
